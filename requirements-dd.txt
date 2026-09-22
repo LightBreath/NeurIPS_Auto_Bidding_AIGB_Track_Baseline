@@ -1,0 +1,7 @@
+# Focused DD development/test environment; the original full-stack requirements remain separate.
+torch==2.14.0
+numpy==2.4.6
+pandas==3.0.6
+einops==0.8.2
+pytest==9.1.1
+psutil==7.2.2
