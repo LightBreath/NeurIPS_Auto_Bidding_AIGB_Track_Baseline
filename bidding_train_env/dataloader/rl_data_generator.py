@@ -85,7 +85,7 @@ class RlDataGenerator:
             group = group.merge(group_agg, on='timeStepIndex', suffixes=('', '_agg'))
             # 计算 realCost 和 realConversion
             realAllCost = (group['isExposed'] * group['cost']).sum()
-            realAllConversion = group['conversionAction'].sum()
+            realAllConversion = group.loc[group['isExposed'] == 1, 'conversionAction'].sum()
 
 
 

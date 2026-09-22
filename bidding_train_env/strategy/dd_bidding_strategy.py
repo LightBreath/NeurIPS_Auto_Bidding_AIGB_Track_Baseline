@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from bidding_train_env.strategy.base_bidding_strategy import BaseBiddingStrategy
-import numpy as np
 from bidding_train_env.baseline.dd.DFUSER import DFUSER
 import os
 
@@ -11,15 +10,18 @@ class DdBiddingStrategy(BaseBiddingStrategy):
     Decision-Diffuser-PlayerStrategy
     """
 
-    def __init__(self, budget=100, name="Decision-Diffuser-PlayerStrategy", cpa=2, category=1):
+    def __init__(self, budget=100, name="Decision-Diffuser-PlayerStrategy", cpa=2, category=1,
+                 model_path=None, target_return=1.):
         super().__init__(budget, name, cpa, category)
         file_name = os.path.dirname(os.path.realpath(__file__))
         dir_name = os.path.dirname(file_name)
         dir_name = os.path.dirname(dir_name)
-        model_path = os.path.join(dir_name, "saved_model", "DDtest", "diffuser.pt")
+        model_path = model_path or os.path.join(dir_name, "saved_model", "DDtest", "diffuser.pt")
+        self.target_return = target_return
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.model = DFUSER()
-        self.model.load_net(model_path,device =self.device)
+        self.model = DFUSER.from_checkpoint(model_path, device=self.device)
+        if self.model.num_of_states != 16 or self.model.step_len != 48:
+            raise ValueError("Bidding strategy requires a 16-state, 48-step checkpoint")
         self.state_dim = 16
         self.input = np.zeros((48,self.state_dim+1))
 
@@ -46,6 +48,8 @@ class DdBiddingStrategy(BaseBiddingStrategy):
         return:
             Return the bids for all the opportunities in the delivery period.
         """
+        if len(pValues) == 0:
+            return np.zeros_like(pValues, dtype=float)
         time_left = (48 - timeStepIndex) / 48
         budget_left = self.remaining_budget / self.budget if self.budget > 0 else 0
         history_xi = [result[:, 0] for result in historyAuctionResult]
@@ -65,7 +69,7 @@ class DdBiddingStrategy(BaseBiddingStrategy):
         historical_bid_mean = np.mean([np.mean(bid) for bid in historyBid]) if historyBid else 0
 
         def mean_of_last_n_elements(history, n):
-            last_three_data = history[max(0, n - 3):n]
+            last_three_data = history[-n:]
             if len(last_three_data) == 0:
                 return 0
             else:
@@ -98,8 +102,8 @@ class DdBiddingStrategy(BaseBiddingStrategy):
         for i in range(self.state_dim):
             self.input[timeStepIndex,i] = test_state[i]
         self.input[:,-1] = timeStepIndex
-        x = torch.tensor(self.input.reshape(-1), device=self.device)
-        alpha  = self.model(x)
+        x = torch.tensor(self.input.reshape(-1), device=self.device, dtype=torch.float32)
+        alpha = self.model(x, category_id=self.category, cpa=self.cpa, target_return=self.target_return)
         alpha = alpha.item()
         alpha = max(0,alpha)
         bids = alpha * pValues
